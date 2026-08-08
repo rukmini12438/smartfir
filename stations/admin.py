@@ -1,3 +1,5 @@
 from django.contrib import admin
+from .models import PoliceStation, PoliceOfficerProfile
 
-# Register your models here.
+admin.site.register(PoliceStation)
+admin.site.register(PoliceOfficerProfile)
