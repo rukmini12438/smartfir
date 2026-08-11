@@ -4,10 +4,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
+from .rag_service import retrieve_relevant_sections
+
 load_dotenv()
 
-# LangChain ka LLM wrapper — humare Gemini client ki jagah lega,
-# lekin LangChain ke through call hoga (chains banane ke liye zaroori)
 llm = ChatGoogleGenerativeAI(
     model="gemini-flash-latest",
     google_api_key=os.getenv("GEMINI_API_KEY"),
@@ -15,9 +15,6 @@ llm = ChatGoogleGenerativeAI(
 
 
 # ---- STEP 1: Classification ----
-# Pydantic model define karta hai ki AI ka output EXACTLY kis
-# structure mein aana chahiye — LangChain isse automatically
-# enforce karta hai (humein manually JSON parse nahi karna padta)
 class ClassificationResult(BaseModel):
     crime_category: str = Field(description="Short category, e.g. Theft, Assault, Fraud, Cybercrime, Missing Person")
 
@@ -30,9 +27,6 @@ Location: "{location}"
 """
 )
 
-# Ye ek CHAIN hai — "|" (pipe) operator se prompt aur llm ko jodte hain.
-# Matlab: prompt template mein data fill hoga, phir seedha llm ko jayega,
-# aur llm ka output automatically ClassificationResult format mein aayega
 classification_chain = classification_prompt | llm.with_structured_output(ClassificationResult)
 
 
@@ -53,19 +47,25 @@ Crime category: "{crime_category}"
 drafting_chain = drafting_prompt | llm.with_structured_output(DraftResult)
 
 
-# ---- STEP 3: Section Suggestion ----
+# ---- STEP 3: Section Suggestion (RAG-grounded) ----
 class SectionsResult(BaseModel):
-    suggested_sections: str = Field(description="Likely applicable Bharatiya Nyaya Sanhita (BNS) section numbers with a brief reason each")
+    suggested_sections: str = Field(description="Applicable BNS section numbers with a brief reason each, based ONLY on the retrieved legal text provided")
 
 
 sections_prompt = ChatPromptTemplate.from_template(
-    """Suggest applicable Bharatiya Nyaya Sanhita (BNS) sections for this case.
+    """You are suggesting applicable Bharatiya Nyaya Sanhita (BNS) sections for this case.
 
 Complaint: "{complaint_description}"
 Crime category: "{crime_category}"
 
-Note: these are AI-generated suggestions only — a police officer must verify before official registration.
-"""
+Here are the relevant BNS section texts retrieved from the legal database:
+---
+{retrieved_context}
+---
+
+Based ONLY on the sections provided above, suggest which ones apply and why.
+Do not invent section numbers that are not in the provided text.
+Note: these are AI-generated suggestions only — a police officer must verify before official registration."""
 )
 
 sections_chain = sections_prompt | llm.with_structured_output(SectionsResult)
@@ -73,14 +73,12 @@ sections_chain = sections_prompt | llm.with_structured_output(SectionsResult)
 
 def generate_fir_draft(complaint_description, location):
     """
-    3 chains ko SEQUENCE mein chalata hai:
-    1. Pehle crime category classify karo
-    2. Phir usi category ke context ke saath formal description likho
-    3. Phir usi category ke basis par legal sections suggest karo
-
-    Har step ka output agle step ko context ke roop mein milta hai —
-    isse single bade prompt ke bajaye, har step FOCUSED aur zyada
-    accurate hota hai.
+    4-step pipeline:
+    1. Classify crime category
+    2. Draft formal FIR description
+    3. RETRIEVE relevant BNS section texts (RAG)
+    4. Suggest sections — GROUNDED in the retrieved real legal text,
+       not just the model's memory (reduces hallucination)
     """
     try:
         classification = classification_chain.invoke({
@@ -94,9 +92,13 @@ def generate_fir_draft(complaint_description, location):
             "crime_category": classification.crime_category,
         })
 
+        # RAG step: complaint ke basis par relevant BNS sections dhundo
+        retrieved_context = retrieve_relevant_sections(complaint_description)
+
         sections = sections_chain.invoke({
             "complaint_description": complaint_description,
             "crime_category": classification.crime_category,
+            "retrieved_context": retrieved_context,
         })
 
         return {
