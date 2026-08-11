@@ -26,6 +26,12 @@ class Complaint(models.Model):
         default=Status.SUBMITTED,
     )
 
+    embedding = models.JSONField(null=True, blank=True)
+    # Complaint ke text ka "meaning vector" — AI generate karke yahan save karega.
+    # Isse hum baad mein doosre complaints se similarity compare kar sakte hain
+    # (jaise "phone chori" aur "mobile stolen" ko semantically similar samajhna,
+    # sirf exact keyword match nahi)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

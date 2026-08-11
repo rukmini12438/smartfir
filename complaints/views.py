@@ -1,7 +1,10 @@
 from rest_framework import generics, permissions
+from rest_framework.views import APIView
+from rest_framework.response import Response
 from .models import Complaint, FIR
 from .serializers import ComplaintSerializer, FIRSerializer
 from .ai_service import generate_fir_draft
+from .pattern_service import get_embedding, find_similar_complaints
 
 
 class ComplaintListCreateView(generics.ListCreateAPIView):
@@ -15,13 +18,49 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
         return Complaint.objects.filter(citizen=user).order_by("-created_at")
 
     def perform_create(self, serializer):
-        serializer.save(citizen=self.request.user)
+        complaint = serializer.save(citizen=self.request.user)
+        # Naya complaint bante hi uska embedding generate karke save
+        # kar dete hain — taaki baad mein similarity search mein use ho sake
+        try:
+            complaint.embedding = get_embedding(complaint.description)
+            complaint.save()
+        except Exception as e:
+            print(f"Embedding generation failed: {e}")
 
 
 class ComplaintDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = ComplaintSerializer
     permission_classes = [permissions.IsAuthenticated]
     queryset = Complaint.objects.all()
+
+
+class SimilarComplaintsView(APIView):
+    """
+    Police ke liye — ek complaint ke liye 'kya iske jaisi aur bhi
+    complaints hain' check karta hai (pattern detection).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            target = Complaint.objects.get(pk=pk)
+        except Complaint.DoesNotExist:
+            return Response({"error": "Complaint not found"}, status=404)
+
+        all_complaints = Complaint.objects.exclude(pk=pk)
+        similar = find_similar_complaints(target, all_complaints)
+
+        results = [
+            {
+                "id": item["complaint"].id,
+                "description": item["complaint"].description,
+                "location": item["complaint"].location,
+                "citizen_username": item["complaint"].citizen.username,
+                "similarity_score": item["similarity_score"],
+            }
+            for item in similar
+        ]
+        return Response(results)
 
 
 class FIRListCreateView(generics.ListCreateAPIView):
@@ -35,16 +74,11 @@ class FIRListCreateView(generics.ListCreateAPIView):
         return FIR.objects.filter(complaint__citizen=user).order_by("-created_at")
 
     def perform_create(self, serializer):
-        # Complaint object nikalte hain jiska FIR bana rahe hain
         complaint = serializer.validated_data["complaint"]
-
-        # AI se formal FIR draft aur legal sections generate karwate hain
         ai_result = generate_fir_draft(
             complaint_description=complaint.description,
             location=complaint.location,
         )
-
-        # AI ke result ko FIR object mein save karte hain
         serializer.save(
             formal_description=ai_result["formal_description"],
             suggested_sections=ai_result["suggested_sections"],
