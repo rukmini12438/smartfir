@@ -114,3 +114,31 @@ def generate_fir_draft(complaint_description, location):
             "crime_category": "Unspecified",
             "suggested_sections": "Could not determine — please review manually.",
         }
+
+
+    # ---- Voice-based FIR filing: Audio transcription ----
+from google import genai as raw_genai
+from google.genai import types as raw_types
+
+_raw_client = raw_genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+
+def transcribe_audio(audio_bytes, mime_type="audio/webm"):
+    """
+    Audio recording ko Gemini ko directly bhejta hai — Gemini
+    multimodal hai, matlab text ke alawa audio bhi "samajh" sakta hai.
+    Agar citizen Hindi/Hinglish mein bole, to English mein
+    translate karke wapas deta hai — taaki complaint text
+    hamesha consistent format mein rahe.
+    """
+    response = _raw_client.models.generate_content(
+        model="gemini-flash-latest",
+        contents=[
+            "Transcribe this audio recording of a citizen describing a "
+            "complaint to police. If they are speaking Hindi or Hinglish, "
+            "transcribe and translate into clear English. Return ONLY the "
+            "transcribed text, nothing else — no preamble or explanation.",
+            raw_types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+        ],
+    )
+    return response.text.strip()

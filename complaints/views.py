@@ -1,9 +1,10 @@
 from rest_framework import generics, permissions
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from .models import Complaint, FIR
 from .serializers import ComplaintSerializer, FIRSerializer
-from .ai_service import generate_fir_draft
+from .ai_service import generate_fir_draft, transcribe_audio
 from .pattern_service import get_embedding, find_similar_complaints
 
 
@@ -85,7 +86,34 @@ class FIRListCreateView(generics.ListCreateAPIView):
         )
 
 
+class TranscribeAudioView(APIView):
+    """
+    Audio recording accept karta hai (browser se), Gemini se
+    transcribe karwata hai, aur text wapas bhejta hai.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser]
+    # MultiPartParser zaroori hai kyunki humein file upload
+    # (audio) accept karni hai, sirf JSON nahi
+
+    def post(self, request):
+        audio_file = request.FILES.get("audio")
+        if not audio_file:
+            return Response({"error": "No audio file provided"}, status=400)
+
+        try:
+            text = transcribe_audio(
+                audio_file.read(),
+                audio_file.content_type or "audio/webm",
+            )
+            return Response({"text": text})
+        except Exception as e:
+            print(f"Transcription failed: {e}")
+            return Response({"error": "Transcription failed"}, status=500)        
+
+
 class FIRDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = FIRSerializer
     permission_classes = [permissions.IsAuthenticated]
     queryset = FIR.objects.all()
+
