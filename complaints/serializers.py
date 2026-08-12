@@ -12,9 +12,6 @@ class ComplaintSerializer(serializers.ModelSerializer):
     """
 
     citizen_username = serializers.CharField(source="citizen.username", read_only=True)
-    # source="citizen.username" — ye related User model ke andar jaake
-    # uska username nikal ke ek naya readable field bana deta hai response mein,
-    # taaki frontend ko citizen ka naam dikhane ke liye alag API call na karni pade
 
     class Meta:
         model = Complaint
@@ -26,19 +23,19 @@ class ComplaintSerializer(serializers.ModelSerializer):
             "location",
             "incident_date",
             "status",
+            "urgency",
             "created_at",
         ]
-        read_only_fields = ["citizen", "status", "created_at"]
-        # citizen -> humne khud set karna hai (upar wajah bataya)
-        # status -> naya complaint hamesha "SUBMITTED" se shuru hoga, user khud status set nahi kar sakta
+        read_only_fields = ["citizen", "status", "urgency", "created_at"]
+        # citizen -> humne khud set karna hai
+        # status -> naya complaint hamesha "SUBMITTED" se shuru hoga
+        # urgency -> AI automatically set karega, user nahi
         # created_at -> automatically system set karta hai
 
 
 class FIRSerializer(serializers.ModelSerializer):
     """
-    FIR dikhane/create karne ke liye. Abhi ke liye simple rakha hai —
-    Phase 1-3 mein jab AI integrate hoga, formal_description aur
-    suggested_sections fields AI se automatically fill hone lagenge.
+    FIR dikhane/create karne ke liye.
     """
 
     complaint_description = serializers.CharField(source="complaint.description", read_only=True)

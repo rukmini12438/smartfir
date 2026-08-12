@@ -29,6 +29,41 @@ Location: "{location}"
 
 classification_chain = classification_prompt | llm.with_structured_output(ClassificationResult)
 
+# ---- Urgency Scoring ----
+class UrgencyResult(BaseModel):
+    urgency_level: str = Field(description="Must be exactly one of: HIGH, MEDIUM, LOW")
+
+
+urgency_prompt = ChatPromptTemplate.from_template(
+    """Assess the urgency of this citizen complaint for police triage purposes.
+
+Complaint: "{complaint_description}"
+
+Guidelines:
+- HIGH: life-threatening situations, ongoing crime, weapons involved, immediate danger
+- MEDIUM: physical confrontation/assault, active theft with suspect nearby, credible threats
+- LOW: property-only crimes with no immediate danger, past incidents already resolved, minor disputes
+
+Respond with exactly one word: HIGH, MEDIUM, or LOW."""
+)
+
+urgency_chain = urgency_prompt | llm.with_structured_output(UrgencyResult)
+
+def classify_urgency(complaint_description):
+    """
+    Complaint file hote hi call hota hai — police dashboard ko
+    batata hai kaunsa case sabse pehle dekhna chahiye.
+    """
+    try:
+        result = urgency_chain.invoke({"complaint_description": complaint_description})
+        level = result.urgency_level.strip().upper()
+        if level not in ("HIGH", "MEDIUM", "LOW"):
+            level = "MEDIUM"
+        return level
+    except Exception as e:
+        print(f"Urgency classification failed: {e}")
+        return "MEDIUM"
+
 
 # ---- STEP 2: FIR Drafting ----
 class DraftResult(BaseModel):

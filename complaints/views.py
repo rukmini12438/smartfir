@@ -4,9 +4,8 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from .models import Complaint, FIR
 from .serializers import ComplaintSerializer, FIRSerializer
-from .ai_service import generate_fir_draft, transcribe_audio
 from .pattern_service import get_embedding, find_similar_complaints
-
+from .ai_service import generate_fir_draft, transcribe_audio, classify_urgency
 
 class ComplaintListCreateView(generics.ListCreateAPIView):
     serializer_class = ComplaintSerializer
@@ -20,13 +19,12 @@ class ComplaintListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         complaint = serializer.save(citizen=self.request.user)
-        # Naya complaint bante hi uska embedding generate karke save
-        # kar dete hain — taaki baad mein similarity search mein use ho sake
         try:
             complaint.embedding = get_embedding(complaint.description)
+            complaint.urgency = classify_urgency(complaint.description)
             complaint.save()
         except Exception as e:
-            print(f"Embedding generation failed: {e}")
+            print(f"Post-processing failed: {e}")
 
 
 class ComplaintDetailView(generics.RetrieveUpdateAPIView):

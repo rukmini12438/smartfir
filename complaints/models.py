@@ -10,6 +10,11 @@ class Complaint(models.Model):
         CONVERTED = "CONVERTED", "Converted to FIR"
         REJECTED = "REJECTED", "Rejected"
 
+    class Urgency(models.TextChoices):
+        HIGH = "HIGH", "High"
+        MEDIUM = "MEDIUM", "Medium"
+        LOW = "LOW", "Low"
+
     citizen = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -27,10 +32,16 @@ class Complaint(models.Model):
     )
 
     embedding = models.JSONField(null=True, blank=True)
-    # Complaint ke text ka "meaning vector" — AI generate karke yahan save karega.
-    # Isse hum baad mein doosre complaints se similarity compare kar sakte hain
-    # (jaise "phone chori" aur "mobile stolen" ko semantically similar samajhna,
-    # sirf exact keyword match nahi)
+
+    urgency = models.CharField(
+        max_length=10,
+        choices=Urgency.choices,
+        null=True,
+        blank=True,
+    )
+    # AI complaint padh ke decide karega ye kitna urgent hai —
+    # taaki police dashboard mein sabse pehle sabse zaroori
+    # cases dikhein, sabse purani complaint nahi
 
     created_at = models.DateTimeField(auto_now_add=True)
 
